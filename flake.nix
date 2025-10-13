@@ -50,6 +50,8 @@
       pythonEnv = python.withPackages (
         ps:
           [
+            ps.pytest
+            ps.uv
             #ps.jupyterlab
             ps.ipykernel
             ps.pandas

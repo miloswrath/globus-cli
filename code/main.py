@@ -1,20 +1,34 @@
-"""Helper utilities for orchestrating Globus CLI transfers.
+"""Helper utilities and CLI commands for orchestrating Globus transfers.
 
 The `GlobusSync` class defined in this module keeps the imperative shell logic
 for `globus transfer` in one place so that cron jobs or ad hoc bash scripts can
 delegate the heavy lifting to Python. Configuration comes from either explicit
 arguments, environment variables, or a combination of both, which keeps the
-shell wrapper minimal and easier to audit.
+shell wrapper minimal and easier to audit. The Click-based CLI exposes this
+logic alongside the actigraphy reshaping workflow for interactive use.
 """
 
 from __future__ import annotations
 
-import argparse
+import logging
 import os
 import shlex
 import subprocess
 import sys
+from pathlib import Path
 from typing import List, Mapping, Optional, Sequence
+
+import click
+
+try:
+    from .logging_config import setup_logging
+    from .transfer.main import copy_actigraphy_to_bids
+except ImportError:  # pragma: no cover - allows running as a script
+    from logging_config import setup_logging  # type: ignore
+    from transfer.main import copy_actigraphy_to_bids  # type: ignore
+
+setup_logging()
+logger = logging.getLogger(__name__)
 
 ENV_SOURCE_ENDPOINT = "GLOBUS_SOURCE_ENDPOINT"
 ENV_DEST_ENDPOINT = "GLOBUS_DEST_ENDPOINT"
@@ -121,6 +135,13 @@ class GlobusSync:
         self.extra_flags = list(extra_flags) if extra_flags else []
         self.globus_command = globus_command
 
+        logger.debug(
+            "Initialised GlobusSync(dry_run=%s, preserve_mtime=%s, sync_level=%s)",
+            dry_run,
+            preserve_mtime,
+            sync_level,
+        )
+
     @classmethod
     def from_env(
         cls,
@@ -217,6 +238,7 @@ class GlobusSync:
         command.append(f"{self.source_endpoint}:{self.source_path}")
         command.append(f"{self.destination_endpoint}:{self.destination_path}")
 
+        logger.debug("Constructed globus command arguments: %s", command)
         return command
 
     def command_as_string(self) -> str:
@@ -232,6 +254,7 @@ class GlobusSync:
     ) -> subprocess.CompletedProcess:
         """Execute the transfer command via :func:`subprocess.run`."""
         command = self.build_transfer_command()
+        logger.debug("Executing globus command: %s", command)
         return subprocess.run(
             command,
             capture_output=capture_output,
@@ -240,99 +263,174 @@ class GlobusSync:
         )
 
 
-def main(argv: Optional[Sequence[str]] = None) -> int:
-    """CLI entry point that can be hooked directly from Bash."""
-    parser = argparse.ArgumentParser(
-        description="Execute a Globus transfer using the local Globus CLI."
-    )
-    parser.add_argument("--source-endpoint", help="Override GLOBUS_SOURCE_ENDPOINT.")
-    parser.add_argument("--dest-endpoint", help="Override GLOBUS_DEST_ENDPOINT.")
-    parser.add_argument("--source-path", help="Override GLOBUS_SOURCE_PATH.")
-    parser.add_argument("--dest-path", help="Override GLOBUS_DEST_PATH.")
-    parser.add_argument("--label", help="Override GLOBUS_LABEL.")
-    parser.add_argument(
-        "--sync-level",
-        choices=["exists", "size", "mtime", "checksum"],
-        help="Override GLOBUS_SYNC_LEVEL.",
-    )
-    parser.add_argument("--notify", help="Override GLOBUS_NOTIFY.")
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Force --dry-run regardless of environment configuration.",
-    )
-    parser.add_argument(
-        "--globus-command",
-        help="Path or alias to the Globus CLI executable.",
-    )
-    parser.add_argument(
-        "--extra-flag",
-        dest="extra_flags",
-        action="append",
-        default=None,
-        help="Additional flag to append to the globus command. Can be used multiple times.",
-    )
-    parser.set_defaults(preserve_mtime=None)
-    preserve_group = parser.add_mutually_exclusive_group()
-    preserve_group.add_argument(
-        "--preserve-mtime",
-        dest="preserve_mtime",
-        action="store_true",
-        help="Explicitly enable --preserve-mtime.",
-    )
-    preserve_group.add_argument(
-        "--no-preserve-mtime",
-        dest="preserve_mtime",
-        action="store_false",
-        help="Explicitly disable --preserve-mtime.",
-    )
-    parser.add_argument(
-        "--show-command",
-        action="store_true",
-        help="Print the assembled command instead of executing it.",
-    )
+CONTEXT_SETTINGS = {"help_option_names": ["-h", "--help"]}
 
-    args = parser.parse_args(argv)
 
+@click.group(context_settings=CONTEXT_SETTINGS)
+def cli() -> None:
+    """Command-line helpers for Globus sync and actigraphy transfers."""
+
+
+@cli.command("sync")
+@click.option("--source-endpoint", help=f"Override {ENV_SOURCE_ENDPOINT}.")
+@click.option("--dest-endpoint", help=f"Override {ENV_DEST_ENDPOINT}.")
+@click.option("--source-path", help=f"Override {ENV_SOURCE_PATH}.")
+@click.option("--dest-path", help=f"Override {ENV_DEST_PATH}.")
+@click.option("--label", help=f"Override {ENV_LABEL}.")
+@click.option(
+    "--sync-level",
+    type=click.Choice(["exists", "size", "mtime", "checksum"]),
+    help=f"Override {ENV_SYNC_LEVEL}.",
+)
+@click.option("--notify", help=f"Override {ENV_NOTIFY}.")
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help="Force --dry-run regardless of environment configuration.",
+)
+@click.option(
+    "--globus-command",
+    help="Path or alias to the Globus CLI executable.",
+)
+@click.option(
+    "--extra-flag",
+    "extra_flags",
+    multiple=True,
+    help="Additional flag to append to the Globus command. Can be used multiple times.",
+)
+@click.option(
+    "--preserve-mtime",
+    "preserve_mtime_flag",
+    flag_value=True,
+    default=None,
+    help="Explicitly enable --preserve-mtime.",
+)
+@click.option(
+    "--no-preserve-mtime",
+    "preserve_mtime_flag",
+    flag_value=False,
+    help="Explicitly disable --preserve-mtime.",
+)
+@click.option(
+    "--show-command",
+    is_flag=True,
+    help="Print the assembled command instead of executing it.",
+)
+def sync_command(
+    *,
+    source_endpoint: Optional[str],
+    dest_endpoint: Optional[str],
+    source_path: Optional[str],
+    dest_path: Optional[str],
+    label: Optional[str],
+    sync_level: Optional[str],
+    notify: Optional[str],
+    dry_run: bool,
+    globus_command: Optional[str],
+    extra_flags: Sequence[str],
+    preserve_mtime_flag: Optional[bool],
+    show_command: bool,
+) -> None:
+    """Execute a Globus transfer using the local Globus CLI."""
     overrides = {}
-    if args.source_endpoint:
-        overrides["source_endpoint"] = args.source_endpoint
-    if args.dest_endpoint:
-        overrides["destination_endpoint"] = args.dest_endpoint
-    if args.source_path:
-        overrides["source_path"] = args.source_path
-    if args.dest_path:
-        overrides["destination_path"] = args.dest_path
-    if args.label:
-        overrides["label"] = args.label
-    if args.sync_level:
-        overrides["sync_level"] = args.sync_level
-    if args.notify:
-        overrides["notify"] = args.notify
-    if args.dry_run:
+    if source_endpoint:
+        overrides["source_endpoint"] = source_endpoint
+    if dest_endpoint:
+        overrides["destination_endpoint"] = dest_endpoint
+    if source_path:
+        overrides["source_path"] = source_path
+    if dest_path:
+        overrides["destination_path"] = dest_path
+    if label:
+        overrides["label"] = label
+    if sync_level:
+        overrides["sync_level"] = sync_level
+    if notify:
+        overrides["notify"] = notify
+    if dry_run:
         overrides["dry_run"] = True
-    if args.globus_command:
-        overrides["globus_command"] = args.globus_command
-    if args.extra_flags is not None:
-        overrides["extra_flags"] = args.extra_flags
-    if args.preserve_mtime is not None:
-        overrides["preserve_mtime"] = args.preserve_mtime
+    if globus_command:
+        overrides["globus_command"] = globus_command
+    if extra_flags:
+        overrides["extra_flags"] = list(extra_flags)
+    if preserve_mtime_flag is not None:
+        overrides["preserve_mtime"] = preserve_mtime_flag
 
-    sync = GlobusSync.from_env(**overrides)
+    logger.debug("CLI overrides: %s", overrides)
 
-    if args.show_command:
-        print(sync.command_as_string())
-        return 0
+    try:
+        sync = GlobusSync.from_env(**overrides)
+    except Exception as exc:
+        logger.exception("Failed to initialise GlobusSync from CLI inputs")
+        raise click.ClickException(str(exc)) from exc
+
+    if show_command:
+        command_str = sync.command_as_string()
+        logger.info("Dry-run assembled command: %s", command_str)
+        click.echo(command_str)
+        return
 
     try:
         sync.run()
     except subprocess.CalledProcessError as exc:
-        sys.stderr.write(
-            f"Globus transfer failed with exit code {exc.returncode}.\n"
-        )
-        return exc.returncode or 1
-    return 0
+        logger.exception("Globus transfer failed")
+        raise click.ClickException(
+            f"Globus transfer failed with exit code {exc.returncode}."
+        ) from exc
+
+    logger.info("Globus transfer completed successfully")
 
 
-if __name__ == "__main__":
-    raise SystemExit(main())
+@cli.command("transfer")
+@click.option(
+    "--base-path",
+    type=click.Path(file_okay=False, path_type=Path),
+    help="Root containing both ne-dump/ and act-int-test/. Defaults to BASE_PATH env var.",
+)
+@click.option(
+    "--dry-run/--apply",
+    default=True,
+    show_default=True,
+    help="Preview files without copying by default; pass --apply to perform the copy.",
+)
+def transfer_command(
+    *,
+    base_path: Optional[Path],
+    dry_run: bool,
+) -> None:
+    """Copy actigraphy CSVs into the BIDS-like layout."""
+    kwargs = {"dry_run": dry_run}
+    if base_path is not None:
+        kwargs["base_path"] = base_path
+
+    try:
+        copied = copy_actigraphy_to_bids(**kwargs)
+    except Exception as exc:
+        logger.exception("Actigraphy transfer failed")
+        raise click.ClickException(str(exc)) from exc
+
+    action = "Would copy" if dry_run else "Copied"
+    for source, destination in copied:
+        click.echo(f"{action} {source} -> {destination}")
+
+    logger.info("Actigraphy transfer complete (dry_run=%s)", dry_run)
+
+
+def main(argv: Optional[Sequence[str]] = None) -> None:
+    """Program entry point compatible with console scripts."""
+    args_list = list(argv) if argv is not None else None
+    cli.main(args=args_list, prog_name="globus-helper", standalone_mode=False)
+
+
+if __name__ == "__main__":  # pragma: no cover - convenience for module invocation
+    try:
+        main(sys.argv[1:])
+    except click.ClickException as exc:
+        click.echo(str(exc), err=True)
+        sys.exit(exc.exit_code)
+    except SystemExit:
+        raise
+    except Exception as exc:  # noqa: BLE001 - top-level guard
+        logger.exception("Unhandled exception in globus-helper CLI")
+        click.echo(f"Unhandled error: {exc}", err=True)
+        sys.exit(1)

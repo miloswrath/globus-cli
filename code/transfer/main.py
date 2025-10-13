@@ -23,14 +23,23 @@ environment variable when no explicit path is provided.
 
 from __future__ import annotations
 
+import argparse
+import logging
 import os
 import shutil
 import sys
-import argparse
 from pathlib import Path
 from typing import Iterable, List, Optional, Tuple
 
-VERSION_TO_SESSION = {"v0": "1", "v3": "2", "v5": "3"}
+try:
+    from ..logging_config import setup_logging
+except ImportError:  # pragma: no cover - allows running as a script
+    from logging_config import setup_logging  # type: ignore
+
+setup_logging()
+logger = logging.getLogger(__name__)
+
+VERSION_TO_SESSION = {"V0": "1", "V3": "2", "V5": "3"}
 
 
 def copy_actigraphy_to_bids(
@@ -64,16 +73,22 @@ def copy_actigraphy_to_bids(
     if base_path is None:
         raw_base = os.environ.get("BASE_PATH")
         if not raw_base:
+            logger.error("BASE_PATH environment variable is not set")
             raise EnvironmentError(
                 "BASE_PATH environment variable must be set or base_path provided."
             )
         base_path = Path(raw_base)
 
     base_path = Path(base_path).expanduser().resolve()
+    logger.debug("Resolved base path: %s (dry_run=%s)", base_path, dry_run)
+
     source_root = base_path / "ne-dump" / "Actigraph"
     destination_root = base_path / "act-int-test"
 
+    logger.debug("Scanning source root: %s", source_root)
+
     if not source_root.is_dir():
+        logger.error("Actigraphy source directory not found at %s", source_root)
         raise FileNotFoundError(f"Actigraphy source directory not found: {source_root}")
 
     copied: List[Tuple[Path, Path]] = []
@@ -84,7 +99,10 @@ def copy_actigraphy_to_bids(
 
         subject_id = subject_dir.name.split("_Actigraphy", 1)[0].strip()
         if not subject_id:
+            logger.debug("Skipping subject directory %s due to missing subject_id", subject_dir)
             continue
+
+        logger.debug("Processing subject %s in %s", subject_id, subject_dir)
 
         for version_dir in sorted(subject_dir.iterdir()):
             if not version_dir.is_dir():
@@ -92,6 +110,10 @@ def copy_actigraphy_to_bids(
 
             session_id = VERSION_TO_SESSION.get(version_dir.name)
             if session_id is None:
+                logger.debug(
+                    "Skipping version directory %s; no session mapping available",
+                    version_dir,
+                )
                 continue
 
             for csv_file in version_dir.glob("*RAW.csv"):
@@ -109,8 +131,15 @@ def copy_actigraphy_to_bids(
                     destination_dir.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(csv_file, destination_file)
 
+                logger.debug(
+                    "%s %s -> %s",
+                    "Would copy" if dry_run else "Copying",
+                    csv_file,
+                    destination_file,
+                )
                 copied.append((csv_file, destination_file))
 
+    logger.info("Identified %d file(s) for transfer (dry_run=%s)", len(copied), dry_run)
     return copied
 
 
@@ -145,6 +174,8 @@ if __name__ == "__main__":
         for source, destination in iter_transferred_files(**kwargs):
             action = "Would copy" if args.dry_run else "Copied"
             print(f"{action} {source} -> {destination}")
+        logger.info("Transfer simulation complete (dry_run=%s)", args.dry_run)
     except Exception as exc:  # pragma: no cover - convenience for CLI usage
+        logger.exception("Transfer operation failed")
         sys.stderr.write(f"Error: {exc}\n")
         sys.exit(1)

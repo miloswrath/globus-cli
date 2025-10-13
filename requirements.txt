@@ -1,0 +1,2 @@
+# Runtime dependencies compatible with pip and uv workflows.
+click>=8.1
