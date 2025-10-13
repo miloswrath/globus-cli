@@ -70,7 +70,7 @@ def copy_actigraphy_to_bids(
         base_path = Path(raw_base)
 
     base_path = Path(base_path).expanduser().resolve()
-    source_root = base_path / "ne-dump" / "Actigraphy"
+    source_root = base_path / "ne-dump" / "Actigraph"
     destination_root = base_path / "act-int-test"
 
     if not source_root.is_dir():
@@ -78,11 +78,11 @@ def copy_actigraphy_to_bids(
 
     copied: List[Tuple[Path, Path]] = []
 
-    for subject_dir in sorted(source_root.glob("*_actigraphy")):
+    for subject_dir in sorted(source_root.glob("*_Actigraphy")):
         if not subject_dir.is_dir():
             continue
 
-        subject_id = subject_dir.name.split("_actigraphy", 1)[0].strip()
+        subject_id = subject_dir.name.split("_Actigraphy", 1)[0].strip()
         if not subject_id:
             continue
 
@@ -114,9 +114,11 @@ def copy_actigraphy_to_bids(
     return copied
 
 
-def iter_transferred_files(*, dry_run: bool = False) -> Iterable[Tuple[Path, Path]]:
+def iter_transferred_files(
+    *, base_path: Optional[Path] = None, dry_run: bool = False
+) -> Iterable[Tuple[Path, Path]]:
     """Convenience generator yielding the results of `copy_actigraphy_to_bids`."""
-    for result in copy_actigraphy_to_bids(dry_run=dry_run):
+    for result in copy_actigraphy_to_bids(base_path=base_path, dry_run=dry_run):
         yield result
 
 
