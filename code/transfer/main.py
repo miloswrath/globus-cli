@@ -1,5 +1,4 @@
 """Transfer actigraphy CSVs into a BIDS-like layout.
-
 File structure of the ne-dump on LSS::
 
     BASE_PATH/ne-dump/Actigraphy/<subject_id>_actigraphy/v<#>/<subject_id> (<date of recording>)RAW.csv

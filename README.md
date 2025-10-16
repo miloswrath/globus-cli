@@ -65,6 +65,7 @@ For the actigraphy workflow, supply `BASE_PATH` pointing at the shared storage r
 ```bash
 globus-helper sync --show-command
 ```
+uv pip install --editable .
 
 Override settings at the command line when needed:
 

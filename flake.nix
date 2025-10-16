@@ -28,6 +28,20 @@
 
       python = pkgs."python${concatMajorMinor version}";
 
+      globusSyncHelper = python.pkgs.buildPythonPackage {
+        pname = "globus-sync-helper";
+        version = "0.1.0";
+        format = "pyproject";
+        src = ./.;
+        nativeBuildInputs = [
+          python.pkgs.setuptools
+          python.pkgs.wheel
+        ];
+        propagatedBuildInputs = [
+          python.pkgs.click
+        ];
+      };
+
       catppuccin-jupyterlab = python.pkgs.buildPythonPackage rec {
         pname = "catppuccin_jupyterlab";
         version = "0.2.4";
@@ -51,7 +65,6 @@
         ps:
           [
             ps.pytest
-            ps.uv
             #ps.jupyterlab
             ps.ipykernel
             ps.pandas
@@ -63,6 +76,9 @@
             ps.httpx
             ps.scipy
             ps.pyyaml
+          ]
+          ++ [
+            globusSyncHelper
           ]
           #++ [catppuccin-jupyterlab] # include the theme here
 
@@ -83,8 +99,7 @@
           if [ ! -d "$KERNEL_DIR" ]; then
             python -m ipykernel install --user \
               --name "$KERNEL_NAME" \
-              --display-name "Python 3.13 (flake)" >/dev/null
-          fi
+              --display-name "Python 3.13 (flake)" >/dev/null fi
         '';
 
 
