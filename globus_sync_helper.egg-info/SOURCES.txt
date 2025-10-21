@@ -1,0 +1,12 @@
+README.md
+pyproject.toml
+code/__init__.py
+code/logging_config.py
+code/main.py
+code/transfer/main.py
+globus_sync_helper.egg-info/PKG-INFO
+globus_sync_helper.egg-info/SOURCES.txt
+globus_sync_helper.egg-info/dependency_links.txt
+globus_sync_helper.egg-info/entry_points.txt
+globus_sync_helper.egg-info/requires.txt
+globus_sync_helper.egg-info/top_level.txt
