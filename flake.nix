@@ -7,7 +7,7 @@
     self,
     nixpkgs,
   }: let
-    supportedSystems = ["x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin"];
+    supportedSystems = ["x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin"]; # only tested on x86_64-linux so far shouldn't matter tho??
     forEachSupportedSystem = f:
       nixpkgs.lib.genAttrs supportedSystems (system:
         let
@@ -63,15 +63,20 @@
 
     apps = forEachSupportedSystem ({
       pythonEnv,
+      globusSyncHelper,
       ...
     }: {
       default = {
         type = "app";
-        program = "${pythonEnv}/bin/python";
+        program = "${globusSyncHelper}/bin/globus-helper";
       };
       globus-helper = {
         type = "app";
-        program = "${pythonEnv}/bin/globus-helper";
+        program = "${globusSyncHelper}/bin/globus-helper";
+      };
+      python = {
+        type = "app";
+        program = "${pythonEnv}/bin/python";
       };
     });
 
@@ -92,7 +97,7 @@
 
         shellHook = ''
           export PYTHONNOUSERSITE=1
-          alias globus-helper="${pythonEnv}/bin/globus-helper"
+          alias globus-helper="${globusSyncHelper}/bin/globus-helper"
           echo "Loaded globus-sync-helper dev environment (Python ${python.version})."
         '';
 

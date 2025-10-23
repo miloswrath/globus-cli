@@ -92,6 +92,7 @@ def copy_actigraphy_to_bids(
         raise FileNotFoundError(f"Actigraphy source directory not found: {source_root}")
 
     copied: List[Tuple[Path, Path]] = []
+    skipped_existing = 0
 
     for subject_dir in sorted(source_root.glob("*_Actigraphy")):
         if not subject_dir.is_dir():
@@ -127,9 +128,21 @@ def copy_actigraphy_to_bids(
                     destination_dir / f"sub-{subject_id}_ses-{session_id}_accel.csv"
                 )
 
+                if destination_file.exists():
+                    logger.debug(
+                        "Skipping %s -> %s because destination already exists",
+                        csv_file,
+                        destination_file,
+                    )
+                    skipped_existing += 1
+                    continue
+
                 if not dry_run:
                     destination_dir.mkdir(parents=True, exist_ok=True)
-                    shutil.copy2(csv_file, destination_file)
+                    with csv_file.open("rb") as source_stream, destination_file.open(
+                        "wb"
+                    ) as destination_stream:
+                        shutil.copyfileobj(source_stream, destination_stream)
 
                 logger.debug(
                     "%s %s -> %s",
@@ -139,7 +152,12 @@ def copy_actigraphy_to_bids(
                 )
                 copied.append((csv_file, destination_file))
 
-    logger.info("Identified %d file(s) for transfer (dry_run=%s)", len(copied), dry_run)
+    logger.info(
+        "Identified %d file(s) for transfer (dry_run=%s, skipped_existing=%d)",
+        len(copied),
+        dry_run,
+        skipped_existing,
+    )
     return copied
 
 
