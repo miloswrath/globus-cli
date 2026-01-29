@@ -1,16 +1,17 @@
 """Transfer actigraphy CSVs into a BIDS-like layout.
 
-File structure of the ne-dump on LSS::
+File structure of the ne-dump on LSS (two layouts are supported)::
 
+    # legacy layout (no dump folders)
     BASE_PATH/ne-dump/Actigraphy/<subject_id>_actigraphy/v<#>/<subject_id> (<date of recording>)RAW.csv
 
-where `<#>` is one of `0`, `3`, or `5`, there is a literal space between
-`<subject_id>` and the parenthesised date, and the version directory maps to a
-session:
+    # current layout with dumps A1–A4
+    BASE_PATH/ne-dump/Actigraphy/A#/ <subject_id>_actigraphy/v<#>/<subject_id> (<date of recording>)RAW.csv
 
-- `v0` → `ses-1`
-- `v3` → `ses-2`
-- `v5` → `ses-3`
+In the legacy layout, the version directory (`v0`, `v3`, `v5`) determines the
+session number. In the dump-aware layout, the dump directory (`A1`–`A4`)
+determines the session number while version directories are ignored for session
+assignment.
 
 The desired output is in a BIDS-inspired structure::
 
@@ -40,6 +41,7 @@ setup_logging()
 logger = logging.getLogger(__name__)
 
 VERSION_TO_SESSION = {"V0": "1", "V3": "2", "V5": "3"}
+DUMP_TO_SESSION = {"A1": "1", "A2": "2", "A3": "3", "A4": "4"}
 
 
 def copy_actigraphy_to_bids(
@@ -94,63 +96,86 @@ def copy_actigraphy_to_bids(
     copied: List[Tuple[Path, Path]] = []
     skipped_existing = 0
 
-    for subject_dir in sorted(source_root.glob("*_Actigraphy")):
-        if not subject_dir.is_dir():
-            continue
+    dump_dirs = [
+        dump_dir
+        for dump_dir in sorted(source_root.iterdir())
+        if dump_dir.is_dir() and dump_dir.name in DUMP_TO_SESSION
+    ]
 
-        subject_id = subject_dir.name.split("_Actigraphy", 1)[0].strip()
-        if not subject_id:
-            logger.debug("Skipping subject directory %s due to missing subject_id", subject_dir)
-            continue
+    def _copy_csv(
+        *, subject_id: str, session_id: str, csv_file: Path
+    ) -> None:
+        destination_dir = destination_root / f"sub-{subject_id}" / "accel" / f"ses-{session_id}"
+        destination_file = destination_dir / f"sub-{subject_id}_ses-{session_id}_accel.csv"
 
-        logger.debug("Processing subject %s in %s", subject_id, subject_dir)
+        if not dry_run:
+            destination_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(csv_file, destination_file)
 
-        for version_dir in sorted(subject_dir.iterdir()):
-            if not version_dir.is_dir():
-                continue
+        logger.debug(
+            "%s %s -> %s",
+            "Would copy" if dry_run else "Copying",
+            csv_file,
+            destination_file,
+        )
+        copied.append((csv_file, destination_file))
 
-            session_id = VERSION_TO_SESSION.get(version_dir.name)
-            if session_id is None:
-                logger.debug(
-                    "Skipping version directory %s; no session mapping available",
-                    version_dir,
-                )
-                continue
-
-            for csv_file in version_dir.glob("*RAW.csv"):
-                if not csv_file.is_file():
+    if dump_dirs:
+        logger.debug("Detected dump-aware layout with %d dump directory(ies)", len(dump_dirs))
+        for dump_dir in dump_dirs:
+            session_id = DUMP_TO_SESSION[dump_dir.name]
+            for subject_dir in sorted(dump_dir.glob("*_Actigraphy")):
+                if not subject_dir.is_dir():
                     continue
 
-                destination_dir = (
-                    destination_root / f"sub-{subject_id}" / "accel" / f"ses-{session_id}"
-                )
-                destination_file = (
-                    destination_dir / f"sub-{subject_id}_ses-{session_id}_accel.csv"
-                )
-
-                if destination_file.exists():
+                subject_id = subject_dir.name.split("_Actigraphy", 1)[0].strip()
+                if not subject_id:
                     logger.debug(
-                        "Skipping %s -> %s because destination already exists",
-                        csv_file,
-                        destination_file,
+                        "Skipping subject directory %s due to missing subject_id", subject_dir
                     )
-                    skipped_existing += 1
                     continue
 
-                if not dry_run:
-                    destination_dir.mkdir(parents=True, exist_ok=True)
-                    with csv_file.open("rb") as source_stream, destination_file.open(
-                        "wb"
-                    ) as destination_stream:
-                        shutil.copyfileobj(source_stream, destination_stream)
-
                 logger.debug(
-                    "%s %s -> %s",
-                    "Would copy" if dry_run else "Copying",
-                    csv_file,
-                    destination_file,
+                    "Processing subject %s in %s (session=%s)", subject_id, subject_dir, session_id
                 )
-                copied.append((csv_file, destination_file))
+
+                for version_dir in sorted(subject_dir.iterdir()):
+                    if not version_dir.is_dir():
+                        continue
+
+                    for csv_file in version_dir.glob("*RAW.csv"):
+                        if csv_file.is_file():
+                            _copy_csv(subject_id=subject_id, session_id=session_id, csv_file=csv_file)
+    else:
+        logger.debug("Detected legacy layout (no dump directories present)")
+        for subject_dir in sorted(source_root.glob("*_Actigraphy")):
+            if not subject_dir.is_dir():
+                continue
+
+            subject_id = subject_dir.name.split("_Actigraphy", 1)[0].strip()
+            if not subject_id:
+                logger.debug("Skipping subject directory %s due to missing subject_id", subject_dir)
+                continue
+
+            logger.debug("Processing subject %s in %s", subject_id, subject_dir)
+
+            for version_dir in sorted(subject_dir.iterdir()):
+                if not version_dir.is_dir():
+                    continue
+
+                session_id = VERSION_TO_SESSION.get(version_dir.name)
+                if session_id is None:
+                    logger.debug(
+                        "Skipping version directory %s; no session mapping available",
+                        version_dir,
+                    )
+                    continue
+
+                for csv_file in version_dir.glob("*RAW.csv"):
+                    if csv_file.is_file():
+                        _copy_csv(
+                            subject_id=subject_id, session_id=session_id, csv_file=csv_file
+                        )
 
     logger.info(
         "Identified %d file(s) for transfer (dry_run=%s, skipped_existing=%d)",

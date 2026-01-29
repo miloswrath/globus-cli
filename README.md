@@ -4,7 +4,48 @@ This project keeps the Globus CLI invocation logic in `globus_helper/main.py` so
 
 ### Requirements
 - Python 3.9+
-- Globus CLI installed and authenticated for the user executing transfers
+- Globus CLI installed and authenticated for the account running transfers
+
+> REQUIRED SCOPES
+> - manage_collection
+> - set_gcs_attributes
+
+### Install and Configure the Globus CLI
+
+1. Install the Globus CLI (choose one):
+   ```bash
+   pipx install globus-cli
+   # or
+   pip install --user globus-cli
+   ```
+2. Log in so the CLI can submit transfers on your behalf:
+   ```bash
+   globus login
+   ```
+3. (Optional) Verify credentials:
+   ```bash
+   globus session show
+   ```
+
+Official documentation provides platform-specific guidance and troubleshooting: https://docs.globus.org/cli/
+
+## Installation
+
+Install dependencies and register the console script either with uv or pip.
+
+```bash
+# uv (creates .venv by default)
+uv pip install --editable .
+
+# pip (activate your virtualenv first)
+pip install --editable .
+```
+
+To install only runtime dependencies without editable mode, use `uv pip install -r requirements.txt` or `pip install -r requirements.txt`. Developers can add `-r requirements-dev.txt` for pytest.
+
+## Configuration
+
+Populate these environment variables before running Globus transfers:
 
 ### Configuration
 Populate these environment variables before running the helper:
