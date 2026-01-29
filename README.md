@@ -7,6 +7,10 @@ Globus Sync Helper packages our Globus transfer automation and actigraphy reshap
 - Python 3.9+
 - Globus CLI installed and authenticated for the account running transfers
 
+> REQUIRED SCOPES
+> - manage_collection
+> - set_gcs_attributes
+
 ### Install and Configure the Globus CLI
 
 1. Install the Globus CLI (choose one):
