@@ -59,6 +59,31 @@ def _resolve_handle_zip(handle_zip: Optional[bool]) -> bool:
     return _str_to_bool(os.environ.get(ENV_HANDLE_ZIP), default=False)
 
 
+def _scan_ne_dump_for_zip(ne_dump_path: Path) -> List[Path]:
+    if not ne_dump_path.is_dir():
+        logger.error("ne-dump directory not found at %s", ne_dump_path)
+        raise FileNotFoundError(f"ne-dump directory not found: {ne_dump_path}")
+
+    entries = list(ne_dump_path.iterdir())
+    directories = sorted(entry for entry in entries if entry.is_dir())
+    if directories:
+        directory_names = ", ".join(dir_path.name for dir_path in directories)
+        message = (
+            "Refusing to handle zip because directories already exist in "
+            f"{ne_dump_path}: {directory_names}"
+        )
+        logger.error(message)
+        raise RuntimeError(message)
+
+    zip_files = sorted(
+        entry for entry in entries if entry.is_file() and entry.suffix.lower() == ".zip"
+    )
+    if not zip_files:
+        logger.info("No zip files found under %s; continuing without unzip.", ne_dump_path)
+
+    return zip_files
+
+
 def copy_actigraphy_to_bids(
     base_path: Optional[Path] = None,
     *,
@@ -117,6 +142,10 @@ def copy_actigraphy_to_bids(
     destination_root = base_path / "act-int-test"
 
     logger.debug("Scanning source root: %s", source_root)
+
+    zip_files: List[Path] = []
+    if handle_zip:
+        zip_files = _scan_ne_dump_for_zip(ne_dump_path)
 
     if not source_root.is_dir():
         logger.error("Actigraphy source directory not found at %s", source_root)
