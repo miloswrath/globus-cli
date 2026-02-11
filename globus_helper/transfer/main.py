@@ -144,8 +144,16 @@ def copy_actigraphy_to_bids(
     logger.debug("Scanning source root: %s", source_root)
 
     zip_files: List[Path] = []
+    zip_to_extract: Optional[Path] = None
     if handle_zip:
         zip_files = _scan_ne_dump_for_zip(ne_dump_path)
+        if len(zip_files) > 1:
+            zip_names = ", ".join(path.name for path in zip_files)
+            message = f"Multiple zip files found in {ne_dump_path}: {zip_names}"
+            logger.error(message)
+            raise RuntimeError(message)
+        if len(zip_files) == 1:
+            zip_to_extract = zip_files[0]
 
     if not source_root.is_dir():
         logger.error("Actigraphy source directory not found at %s", source_root)
