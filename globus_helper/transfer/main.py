@@ -93,8 +93,14 @@ def _log_zip_preview(ne_dump_path: Path, zip_path: Path) -> None:
                 if member and not member.endswith("/")
             ]
     except Exception as exc:
-        logger.exception("Failed to read zip contents for preview: %s", zip_path)
-        raise RuntimeError(f"Failed to read zip contents: {zip_path}") from exc
+        logger.exception(
+            "Failed to read zip contents for preview: %s (ne-dump=%s)",
+            zip_path,
+            ne_dump_path,
+        )
+        raise RuntimeError(
+            f"Failed to read zip contents from {zip_path} in {ne_dump_path}"
+        ) from exc
 
     if not members:
         logger.info("Zip file %s contains no files to extract.", zip_path)
@@ -114,8 +120,18 @@ def _log_zip_preview(ne_dump_path: Path, zip_path: Path) -> None:
 
 
 def _extract_zip(ne_dump_path: Path, zip_path: Path) -> None:
-    with zipfile.ZipFile(zip_path) as zip_file:
-        zip_file.extractall(ne_dump_path)
+    logger.info("Extracting zip %s into %s", zip_path, ne_dump_path)
+    try:
+        with zipfile.ZipFile(zip_path) as zip_file:
+            zip_file.extractall(ne_dump_path)
+    except Exception as exc:
+        logger.exception(
+            "Failed to extract zip %s into %s", zip_path, ne_dump_path
+        )
+        raise RuntimeError(
+            f"Failed to extract {zip_path} into {ne_dump_path}"
+        ) from exc
+    logger.info("Zip extraction complete: %s", zip_path)
 
 
 def copy_actigraphy_to_bids(
@@ -180,6 +196,7 @@ def copy_actigraphy_to_bids(
     zip_files: List[Path] = []
     zip_to_extract: Optional[Path] = None
     if handle_zip:
+        logger.info("Checking for zip uploads in %s", ne_dump_path)
         zip_files = _scan_ne_dump_for_zip(ne_dump_path)
         if len(zip_files) > 1:
             zip_names = ", ".join(path.name for path in zip_files)
@@ -188,6 +205,7 @@ def copy_actigraphy_to_bids(
             raise RuntimeError(message)
         if len(zip_files) == 1:
             zip_to_extract = zip_files[0]
+            logger.info("Detected zip %s in %s", zip_to_extract, ne_dump_path)
             if dry_run:
                 _log_zip_preview(ne_dump_path, zip_to_extract)
             else:
