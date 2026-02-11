@@ -29,6 +29,7 @@ import logging
 import os
 import shutil
 import sys
+import zipfile
 from pathlib import Path
 from typing import Iterable, List, Optional, Tuple
 
@@ -42,10 +43,27 @@ logger = logging.getLogger(__name__)
 
 VERSION_TO_SESSION = {"V0": "1", "V3": "2", "V5": "3"}
 DUMP_TO_SESSION = {"A1": "1", "A2": "2", "A3": "3", "A4": "4"}
+ENV_HANDLE_ZIP = "ACTIGRAPHY_HANDLE_ZIP"
+
+
+def _str_to_bool(value: Optional[str], *, default: bool) -> bool:
+    """Convert a string environment variable into a boolean flag."""
+    if value is None:
+        return default
+    return value.strip().lower() not in {"0", "false", "no", "off"}
+
+
+def _resolve_handle_zip(handle_zip: Optional[bool]) -> bool:
+    if handle_zip is not None:
+        return handle_zip
+    return _str_to_bool(os.environ.get(ENV_HANDLE_ZIP), default=False)
 
 
 def copy_actigraphy_to_bids(
-    base_path: Optional[Path] = None, *, dry_run: bool = False
+    base_path: Optional[Path] = None,
+    *,
+    dry_run: bool = False,
+    handle_zip: Optional[bool] = None,
 ) -> List[Tuple[Path, Path]]:
     """Copy the actigraphy CSVs into a BIDS-compliant directory structure.
 
@@ -58,6 +76,10 @@ def copy_actigraphy_to_bids(
         When True, simulate the copy without creating directories or writing
         files. The returned list still contains the source and intended
         destination paths.
+    handle_zip:
+        When True, check for a zip in ne-dump before scanning for Actigraph
+        content. If None, the `ACTIGRAPHY_HANDLE_ZIP` environment variable is
+        used as a fallback.
 
     Returns
     -------
@@ -82,9 +104,16 @@ def copy_actigraphy_to_bids(
         base_path = Path(raw_base)
 
     base_path = Path(base_path).expanduser().resolve()
-    logger.debug("Resolved base path: %s (dry_run=%s)", base_path, dry_run)
+    handle_zip = _resolve_handle_zip(handle_zip)
+    logger.debug(
+        "Resolved base path: %s (dry_run=%s, handle_zip=%s)",
+        base_path,
+        dry_run,
+        handle_zip,
+    )
 
-    source_root = base_path / "ne-dump" / "Actigraph"
+    ne_dump_path = base_path / "ne-dump"
+    source_root = ne_dump_path / "Actigraph"
     destination_root = base_path / "act-int-test"
 
     logger.debug("Scanning source root: %s", source_root)
@@ -187,10 +216,15 @@ def copy_actigraphy_to_bids(
 
 
 def iter_transferred_files(
-    *, base_path: Optional[Path] = None, dry_run: bool = False
+    *,
+    base_path: Optional[Path] = None,
+    dry_run: bool = False,
+    handle_zip: Optional[bool] = None,
 ) -> Iterable[Tuple[Path, Path]]:
     """Convenience generator yielding the results of `copy_actigraphy_to_bids`."""
-    for result in copy_actigraphy_to_bids(base_path=base_path, dry_run=dry_run):
+    for result in copy_actigraphy_to_bids(
+        base_path=base_path, dry_run=dry_run, handle_zip=handle_zip
+    ):
         yield result
 
 
@@ -207,9 +241,17 @@ if __name__ == "__main__":
         action="store_true",
         help="Print the files that would be copied without modifying the filesystem.",
     )
+    parser.add_argument(
+        "--handle-zip",
+        action="store_true",
+        help=(
+            "Check for a zip file in ne-dump before scanning Actigraph "
+            f"(defaults to {ENV_HANDLE_ZIP})."
+        ),
+    )
     args = parser.parse_args()
 
-    kwargs = {"dry_run": args.dry_run}
+    kwargs = {"dry_run": args.dry_run, "handle_zip": args.handle_zip}
     if args.base_path:
         kwargs["base_path"] = Path(args.base_path)
 

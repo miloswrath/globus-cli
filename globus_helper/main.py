@@ -376,6 +376,11 @@ def sync_command(
     help="Root containing both ne-dump/ and act-int-test/. Defaults to BASE_PATH env var.",
 )
 @click.option(
+    "--handle-zip/--no-handle-zip",
+    default=None,
+    help="Check for a zip in ne-dump before scanning Actigraph (defaults to ACTIGRAPHY_HANDLE_ZIP).",
+)
+@click.option(
     "--dry-run/--apply",
     default=True,
     show_default=True,
@@ -384,10 +389,11 @@ def sync_command(
 def transfer_command(
     *,
     base_path: Optional[Path],
+    handle_zip: Optional[bool],
     dry_run: bool,
 ) -> None:
     """Copy actigraphy CSVs into the BIDS-like layout."""
-    kwargs = {"dry_run": dry_run}
+    kwargs = {"dry_run": dry_run, "handle_zip": handle_zip}
     if base_path is not None:
         kwargs["base_path"] = base_path
 
