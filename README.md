@@ -108,6 +108,7 @@ python -m globus_helper.main sync --show-command
 
 ### Configuration
 - Set `BASE_PATH` to the common root that contains both `ne-dump/Actigraphy` and the target `act-int-test` directory. The script will create the required BIDS folders as needed.
+- Optional: set `ACTIGRAPHY_HANDLE_ZIP=true` to check for a zip in `ne-dump` before scanning for Actigraph content.
 
 ### Usage
 Run the helper directly to copy files and echo each source/destination pair:
@@ -122,6 +123,14 @@ Add `--dry-run` to verify the mapping without writing files, or `--base-path` to
 BASE_PATH=/path/to/share python -m globus_helper.transfer.main --dry-run
 ```
 
+To handle zip uploads in `ne-dump`, pass `--handle-zip` (or set `ACTIGRAPHY_HANDLE_ZIP=true`).
+In dry-run mode, the helper logs a tree-like preview of the zip contents instead of extracting:
+
+```bash
+BASE_PATH=/path/to/share globus-helper transfer --handle-zip --dry-run
+```
 The transfer helper is idempotent: existing destination files are skipped, and new copies are written with fresh default permissions (no metadata is propagated from the source CSVs).
 
 You can also import and call `copy_actigraphy_to_bids()` from another script to get the list of copied `(source, destination)` paths for logging or testing.
+
+Note: build outputs are not edited; source changes live under `globus_helper/`.
