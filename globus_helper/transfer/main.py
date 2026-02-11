@@ -84,6 +84,35 @@ def _scan_ne_dump_for_zip(ne_dump_path: Path) -> List[Path]:
     return zip_files
 
 
+def _log_zip_preview(ne_dump_path: Path, zip_path: Path) -> None:
+    try:
+        with zipfile.ZipFile(zip_path) as zip_file:
+            members = [
+                Path(member)
+                for member in zip_file.namelist()
+                if member and not member.endswith("/")
+            ]
+    except Exception as exc:
+        logger.exception("Failed to read zip contents for preview: %s", zip_path)
+        raise RuntimeError(f"Failed to read zip contents: {zip_path}") from exc
+
+    if not members:
+        logger.info("Zip file %s contains no files to extract.", zip_path)
+        return
+
+    logger.info("Dry-run zip preview for extraction into %s:", ne_dump_path)
+    seen: set[str] = set()
+    for member in sorted(members):
+        parts = member.parts
+        for depth in range(1, len(parts) + 1):
+            prefix = Path(*parts[:depth]).as_posix()
+            if prefix in seen:
+                continue
+            seen.add(prefix)
+            indent = "  " * (depth - 1)
+            logger.info("%s- %s", indent, parts[depth - 1])
+
+
 def copy_actigraphy_to_bids(
     base_path: Optional[Path] = None,
     *,
@@ -154,6 +183,8 @@ def copy_actigraphy_to_bids(
             raise RuntimeError(message)
         if len(zip_files) == 1:
             zip_to_extract = zip_files[0]
+            if dry_run:
+                _log_zip_preview(ne_dump_path, zip_to_extract)
 
     if not source_root.is_dir():
         logger.error("Actigraphy source directory not found at %s", source_root)
