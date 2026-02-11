@@ -113,6 +113,11 @@ def _log_zip_preview(ne_dump_path: Path, zip_path: Path) -> None:
             logger.info("%s- %s", indent, parts[depth - 1])
 
 
+def _extract_zip(ne_dump_path: Path, zip_path: Path) -> None:
+    with zipfile.ZipFile(zip_path) as zip_file:
+        zip_file.extractall(ne_dump_path)
+
+
 def copy_actigraphy_to_bids(
     base_path: Optional[Path] = None,
     *,
@@ -185,6 +190,8 @@ def copy_actigraphy_to_bids(
             zip_to_extract = zip_files[0]
             if dry_run:
                 _log_zip_preview(ne_dump_path, zip_to_extract)
+            else:
+                _extract_zip(ne_dump_path, zip_to_extract)
 
     if not source_root.is_dir():
         logger.error("Actigraphy source directory not found at %s", source_root)
