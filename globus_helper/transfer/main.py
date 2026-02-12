@@ -187,9 +187,9 @@ def copy_actigraphy_to_bids(
         handle_zip,
     )
 
-    ne_dump_path = base_path / "ne-dump"
-    source_root = ne_dump_path / "Actigraph"
-    destination_root = base_path / "act-int-test"
+    ne_dump_path = base_path / "ne-zip" 
+    source_root = ne_dump_path / "Actigraph"""  
+    destination_root = base_path / "act-int-final-test-2"
 
     logger.debug("Scanning source root: %s", source_root)
 
@@ -242,6 +242,15 @@ def copy_actigraphy_to_bids(
         )
         copied.append((csv_file, destination_file))
 
+    subject_dump_dirs = [
+        subject_dir
+        for subject_dir in sorted(source_root.glob("*_Actigraphy"))
+        if subject_dir.is_dir()
+        and any(
+            child.is_dir() and child.name in DUMP_TO_SESSION for child in subject_dir.iterdir()
+        )
+    ]
+
     if dump_dirs:
         logger.debug("Detected dump-aware layout with %d dump directory(ies)", len(dump_dirs))
         for dump_dir in dump_dirs:
@@ -268,6 +277,32 @@ def copy_actigraphy_to_bids(
                     for csv_file in version_dir.glob("*RAW.csv"):
                         if csv_file.is_file():
                             _copy_csv(subject_id=subject_id, session_id=session_id, csv_file=csv_file)
+    elif subject_dump_dirs:
+        logger.debug(
+            "Detected subject-scoped dump layout with %d subject directory(ies)",
+            len(subject_dump_dirs),
+        )
+        for subject_dir in subject_dump_dirs:
+            subject_id = subject_dir.name.split("_Actigraphy", 1)[0].strip()
+            if not subject_id:
+                logger.debug("Skipping subject directory %s due to missing subject_id", subject_dir)
+                continue
+
+            for dump_dir in sorted(subject_dir.iterdir()):
+                if not dump_dir.is_dir() or dump_dir.name not in DUMP_TO_SESSION:
+                    continue
+
+                session_id = DUMP_TO_SESSION[dump_dir.name]
+                logger.debug(
+                    "Processing subject %s in %s (session=%s)",
+                    subject_id,
+                    dump_dir,
+                    session_id,
+                )
+
+                for csv_file in sorted(dump_dir.rglob("*RAW.csv")):
+                    if csv_file.is_file():
+                        _copy_csv(subject_id=subject_id, session_id=session_id, csv_file=csv_file)
     else:
         logger.debug("Detected legacy layout (no dump directories present)")
         for subject_dir in sorted(source_root.glob("*_Actigraphy")):

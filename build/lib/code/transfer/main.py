@@ -81,7 +81,8 @@ def copy_actigraphy_to_bids(
     base_path = Path(base_path).expanduser().resolve()
     logger.debug("Resolved base path: %s (dry_run=%s)", base_path, dry_run)
 
-    source_root = base_path / "ne-dump" / "Actigraph"
+    ne_dump_path = base_path / "ne-zip" / "CORRECT Actigraphy Data- 2026"
+    source_root = ne_dump_path / "Actigraph"
     destination_root = base_path / "act-int-test"
 
     logger.debug("Scanning source root: %s", source_root)
